@@ -11,17 +11,20 @@ import (
 	"strings"
 )
 
-
+// methods to send http requests
 type RequesterMethods struct {
 	Get httpRequester.GetMessage
 	Post httpRequester.PostMessage
 }
 
+// default requester
 var requester = RequesterMethods{httpRequester.Get, httpRequester.Post}
 
-var commodityNameToId map[string]int
+// map commodity name to internal inara id
+var NameToId map[string]int
 
-type CommodityData struct {
+// station with commodity price
+type StationLine struct {
 	System string
 	Station string
 	Pad string
@@ -32,17 +35,45 @@ type CommodityData struct {
 	Updated string
 }
 
-var commodityPrices = []CommodityData{}
-
 // TODO: error handling
 
-func InitRequestor(get httpRequester.GetMessage, post httpRequester.PostMessage) {
+func SetRequesterMethods(get httpRequester.GetMessage, post httpRequester.PostMessage) {
 	requester.Get = get
 	requester.Post = post
 }
 
-func getCommodityListFromHtml(html string) {
-	commodityNameToId = make(map[string]int)
+func GetStationList(commodityName string, systemName string) []StationLine {
+	commodityId := getCommodityIdByName(commodityName)
+	refSystemId := getRefferenceSystemIdByNameFromInara(commodityId, systemName)
+	if commodityId == 0 || refSystemId == 0 {
+		return nil
+	}
+
+	res := getStationListFromInara(commodityId, refSystemId)
+
+	return res
+}
+
+func getCommodityIdByName(commodityName string) int {
+	fillCommodityNameToIdMap()
+	return NameToId[strings.ToLower(commodityName)]
+}
+
+func fillCommodityNameToIdMap() {
+	// fill list once
+	if NameToId != nil {
+		return
+	}
+
+	commodityList := getCommodityListFromInara()
+	for _, commodity := range commodityList {
+		NameToId[strings.ToLower(utility.ParseString(commodity[2]))] = utility.ParseInteger(commodity[1])
+	}
+}
+
+func getCommodityListFromInara() [][]string {
+	html := requester.Get("https://inara.cz/commodity/")
+	NameToId = make(map[string]int)
 
 	r := regexp.MustCompile(`<select.*?name="searchcommodity".*?>(.*?)</select>`)
 	optionsHtml := r.FindStringSubmatch(html)
@@ -55,23 +86,11 @@ func getCommodityListFromHtml(html string) {
 	if optionList == nil {
 		log.Panic("Can't find option with commodity in html")
 	}
-	for _, option := range optionList {
 
-		commodityNameToId[strings.ToLower(utility.ParseString(option[2]))] = utility.ParseInteger(option[1])
-	}
-
+	return optionList
 }
 
-func getCommodityIdByName(commodityName string) int {
-	if commodityNameToId == nil {
-		commodityHtml := requester.Get("https://inara.cz/commodity/")
-		getCommodityListFromHtml(commodityHtml)
-	}
-
-	return commodityNameToId[strings.ToLower(commodityName)]
-}
-
-func getRefferenceSystemId(commodityId int, systemName string) int {
+func getRefferenceSystemIdByNameFromInara(commodityId int, systemName string) int {
 	commodityPage := requester.Post("https://inara.cz/commodity/", url.Values{
 		"formact": {"SEARCH_COMMODITIES"},
 		"searchcommodity": {string(commodityId)},
@@ -91,62 +110,52 @@ func getRefferenceSystemId(commodityId int, systemName string) int {
 	return systemId
 }
 
-func GetCommodityPrices(commodityName string, systemName string) {
-	commodityId := getCommodityIdByName(commodityName)
-	if commodityId == 0 {
-		log.Panic("Can't find commodity id by name ", commodityName)
+func getStationListFromInara(commodityId int, refSystemId int) []StationLine {
+	var StationList []StationLine
+
+	url := fmt.Sprintf("https://inara.cz/ajaxaction.php?act=goodsdata&refname=sellmax&refid=%d&refid2=%d" , commodityId, refSystemId)
+	systemListHtml := requester.Get(url)
+
+	r := regexp.MustCompile(`<tr.*?>(.+?)</tr>`)
+	systemList := r.FindAllStringSubmatch(systemListHtml, -1)
+	if systemList == nil {
+		return nil
 	}
-	refSystemId := getRefferenceSystemId(commodityId, systemName)
-	if refSystemId != 0 {
-		url := fmt.Sprintf("https://inara.cz/ajaxaction.php?act=goodsdata&refname=sellmax&refid=%d&refid2=%d" , commodityId, refSystemId)
-		systemListHtml := requester.Get(url)
-		r := regexp.MustCompile(`<tr.*?>(.+?)</tr>`)
-		res := r.FindAllStringSubmatch(systemListHtml, -1)
 
-		for _, systemLine := range res {
-			r = regexp.MustCompile(`<td.*?>(.*?)</td>`)
-			res = r.FindAllStringSubmatch(systemLine[1], -1)
-			if res != nil {
-				systemStation := strings.Split(utility.ParseString(res[0][1]), "|")
+	for _, systemLine := range systemList {
+		r = regexp.MustCompile(`<td.*?>(.*?)</td>`)
+		systemParamList := r.FindAllStringSubmatch(systemLine[1], -1)
+		if systemParamList != nil {
+			var stationPrice StationLine
 
-				var station CommodityData
+			systemStation := strings.Split(utility.ParseString(systemParamList[0][1]), "|")
 
-				station.System = utility.ParseString(systemStation[0])
-				station.Station = utility.ParseString(systemStation[1])
-				station.Pad = utility.ParseString(res[1][1])
-				station.Distance = utility.ParseInteger(res[3][1])
-				station.Quantity = utility.ParseInteger(res[4][1])
-				station.Price = utility.ParseInteger(res[5][1])
-				station.Updated = utility.ParseString(res[7][1])
+			stationPrice.Station = utility.ParseString(systemStation[0])
+			stationPrice.System = utility.ParseString(systemStation[1])
+			stationPrice.Pad = utility.ParseString(systemParamList[1][1]) // TODO: change to integer
+			stationPrice.Distance = utility.ParseInteger(systemParamList[3][1])
+			stationPrice.Quantity = utility.ParseInteger(systemParamList[4][1])
+			stationPrice.Price = utility.ParseInteger(systemParamList[5][1])
+			stationPrice.Updated = utility.ParseString(systemParamList[7][1])
 
-				r = regexp.MustCompile(`more than (\d+)`)
-				res4 := r.FindStringSubmatch(res[4][1])
-				if res4 != nil {
-					station.MaxQuantity = utility.ParseInteger(res4[1])
-				} else {
-					station.MaxQuantity = station.Quantity
-				}
-
-				commodityPrices = append(commodityPrices, station)
+			r := regexp.MustCompile(`more than (\d+)`)
+			res4 := r.FindStringSubmatch(systemParamList[4][1])
+			if res4 != nil {
+				stationPrice.MaxQuantity = utility.ParseInteger(res4[1])
+			} else {
+				stationPrice.MaxQuantity = stationPrice.Quantity
 			}
-		}
 
-		//fmt.Println(commodityPrices)
+			StationList = append(StationList, stationPrice)
+		}
 	}
+
+	return StationList
 }
 
-func GetBestCommodityPrice(commodityName string, refSystemName string, maxDistance int, landingPad string, itemsQuantity int) CommodityData {
-	if len(commodityPrices) == 0 {
-		GetCommodityPrices(commodityName, refSystemName)
-	}
-
-	var bestStation CommodityData
-	for _, commodityPrice := range commodityPrices {
-
-		if commodityPrice.System == "Chambo" {
-			fmt.Println(commodityPrice)
-		}
-
+func GetBestPrice(stationList []StationLine, maxDistance int, landingPad string, itemsQuantity int) StationLine {
+	var bestStation StationLine
+	for _, commodityPrice := range stationList {
 		if landingPad == "M" && commodityPrice.Pad == "S" {
 			continue
 		}

@@ -11,11 +11,6 @@ import (
 type GetMessage func(url string) string
 type PostMessage func(url string, data url.Values) string
 
-type Requester interface {
-	Get(url string) string
-	Post(url string, data url.Values) string
-}
-
 func readResponse(body io.ReadCloser) string {
 	buf := new(bytes.Buffer)
 	buf.ReadFrom(body)
