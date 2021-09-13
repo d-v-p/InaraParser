@@ -20,7 +20,7 @@ var requester = RequesterMethods{httpRequester.Get, httpRequester.Post}
 
 var NameToId map[string]int
 
-type StationLine struct {
+type SystemLine struct {
 	System string
 	Station string
 	Pad int
@@ -36,21 +36,21 @@ func SetRequesterMethods(get httpRequester.GetMessage, post httpRequester.PostMe
 	requester.Post = post
 }
 
-func GetStationList(commodityName string, systemName string) []StationLine {
-	log.Tracef("getting station list for commodity '%s' and reference system '%s'", commodityName, systemName)
+func GetSystemList(commodityName string, systemName string) []SystemLine {
+	log.Tracef("getting system list for commodity '%s' and reference system '%s'", commodityName, systemName)
 
 	commodityId := getCommodityIdByName(commodityName)
 	if commodityId == 0 {
-		log.Warnln("can't get station list, empty commodity id")
+		log.Warnln("can't get system list, empty commodity id")
 		return nil
 	}
 	refSystemId := getReferenceSystemIdByNameFromInara(commodityId, systemName)
 	if refSystemId == 0 {
-		log.Warnln("can't get station list, empty reference system id")
+		log.Warnln("can't get system list, empty reference system id")
 		return nil
 	}
 
-	res := getStationListFromInara(commodityId, refSystemId)
+	res := getSystemListFromInara(commodityId, refSystemId)
 
 	return res
 }
@@ -135,13 +135,13 @@ func getReferenceSystemIdByNameFromInara(commodityId int, systemName string) int
 	return systemId
 }
 
-func getStationListFromInara(commodityId int, refSystemId int) []StationLine {
-	log.Tracef("getting station list for commodity %d and reference system %d", commodityId, refSystemId)
+func getSystemListFromInara(commodityId int, refSystemId int) []SystemLine {
+	log.Tracef("getting system list for commodity %d and reference system %d", commodityId, refSystemId)
 
-	var StationList []StationLine
+	var SystemList []SystemLine
 
-	stationListUrl := fmt.Sprintf("https://inara.cz/ajaxaction.php?act=goodsdata&refname=sellmax&refid=%d&refid2=%d" , commodityId, refSystemId)
-	systemListHtml := requester.Get(stationListUrl)
+	systemListUrl := fmt.Sprintf("https://inara.cz/ajaxaction.php?act=goodsdata&refname=sellmax&refid=%d&refid2=%d" , commodityId, refSystemId)
+	systemListHtml := requester.Get(systemListUrl)
 
 	r := regexp.MustCompile(`<tr.*?>(.+?)</tr>`)
 	systemList := r.FindAllStringSubmatch(systemListHtml, -1)
@@ -157,58 +157,58 @@ func getStationListFromInara(commodityId int, refSystemId int) []StationLine {
 			continue
 		}
 
-		var stationPrice StationLine
+		var system SystemLine
 
 		stationSystem := strings.Split(utility.ParseString(systemParamList[0][1]), "|")
 
-		stationPrice.Station = utility.ParseString(stationSystem[0])
-		stationPrice.System = utility.ParseString(stationSystem[1])
+		system.Station = utility.ParseString(stationSystem[0])
+		system.System = utility.ParseString(stationSystem[1])
 		switch strings.ToLower(utility.ParseString(systemParamList[1][1]))  {
 			case "s":
-				stationPrice.Pad = 1
+				system.Pad = 1
 				break
 			case "m":
-				stationPrice.Pad = 2
+				system.Pad = 2
 				break
 			case "l":
-				stationPrice.Pad = 3
+				system.Pad = 3
 				break
 		}
-		if stationPrice.Pad == 0 {
+		if system.Pad == 0 {
 			continue
 		}
-		stationPrice.Distance = utility.ParseInteger(systemParamList[3][1])
-		stationPrice.Quantity = utility.ParseInteger(systemParamList[4][1])
-		stationPrice.Price = utility.ParseInteger(systemParamList[5][1])
-		stationPrice.Updated = utility.ParseString(systemParamList[7][1])
+		system.Distance = utility.ParseInteger(systemParamList[3][1])
+		system.Quantity = utility.ParseInteger(systemParamList[4][1])
+		system.Price = utility.ParseInteger(systemParamList[5][1])
+		system.Updated = utility.ParseString(systemParamList[7][1])
 
 		r := regexp.MustCompile(`more than (\d+)`)
 		res4 := r.FindStringSubmatch(systemParamList[4][1])
 		if res4 != nil {
-			stationPrice.MaxQuantity = utility.ParseInteger(res4[1])
+			system.MaxQuantity = utility.ParseInteger(res4[1])
 		} else {
-			stationPrice.MaxQuantity = stationPrice.Quantity
+			system.MaxQuantity = system.Quantity
 		}
 
-		StationList = append(StationList, stationPrice)
+		SystemList = append(SystemList, system)
 	}
 
-	return StationList
+	return SystemList
 }
 
-func GetBestPrice(stationList []StationLine, maxDistance int, landingPad int, itemsQuantity int) StationLine {
-	log.Tracef("getting best station in max distance %d, landing pad %d, min items quantity %d", maxDistance, landingPad, itemsQuantity)
+func GetBestPrice(sysytemList []SystemLine, maxDistance int, landingPad int, itemsQuantity int) SystemLine {
+	log.Tracef("getting system with best price in max distance %d, landing pad %d, min items quantity %d", maxDistance, landingPad, itemsQuantity)
 
-	var bestStation StationLine
-	for _, station := range stationList {
-		if station.Distance <= maxDistance && station.MaxQuantity >= itemsQuantity && station.Pad >= landingPad  {
-			if station.Price > bestStation.Price {
-				bestStation = station
+	var bpSystem SystemLine
+	for _, system := range sysytemList {
+		if system.Distance <= maxDistance && system.MaxQuantity >= itemsQuantity && system.Pad >= landingPad  {
+			if system.Price > bpSystem.Price {
+				bpSystem = system
 			}
 		}
 	}
 
-	log.Traceln("best station", bestStation)
+	log.Traceln("best price system", bpSystem)
 
-	return bestStation
+	return bpSystem
 }

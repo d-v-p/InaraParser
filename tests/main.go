@@ -18,13 +18,13 @@ func RequesterPostMock(url string, data url.Values) string {
 func main() {
 	log.SetLevel(log.TraceLevel)
 
-	stationList := commodity.GetStationList("Void opal", "Veroandi")
+	stationList := commodity.GetSystemList("Void opal", "Veroandi")
 	if stationList != nil {
 		findBestPrice(stationList, 100)
 	}
 }
 
-func findBestPrice(stationList []commodity.StationLine, maxDistance int)  {
+func findBestPrice(stationList []commodity.SystemLine, maxDistance int)  {
 	station := commodity.GetBestPrice(stationList, maxDistance, 1, 0)
 	fmt.Printf("BP in %d ly: %s | %s - %d ly - %d Cr\n", maxDistance, station.System, station.Station, station.Distance, station.Price)
 }
