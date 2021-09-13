@@ -2,7 +2,7 @@ package utility
 
 import (
 	"github.com/grokify/html-strip-tags-go"
-	"log"
+	log "github.com/sirupsen/logrus"
 	"math"
 	"regexp"
 	"strconv"
@@ -22,7 +22,8 @@ func ParseInteger(s string) int {
 
 	res, err := strconv.ParseFloat(t, 32)
 	if err != nil {
-		log.Panic(err)
+		log.Warnln(err)
+		return 0
 	}
 
 	return int(math.Round(res))

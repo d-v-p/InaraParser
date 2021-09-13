@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/d-v-p/InaraParser/app/commodity"
+	log "github.com/sirupsen/logrus"
 	"net/url"
 )
 
@@ -15,14 +16,15 @@ func RequesterPostMock(url string, data url.Values) string {
 }
 
 func main() {
-	stationList := commodity.GetStationList("Alexandrite", "Veroandi")
-	findBestPrice(stationList,100)
+	log.SetLevel(log.TraceLevel)
 
-	stationList = commodity.GetStationList("Void opal", "Veroandi")
-	findBestPrice(stationList,100)
+	stationList := commodity.GetStationList("Void opal", "Veroandi")
+	if stationList != nil {
+		findBestPrice(stationList, 100)
+	}
 }
 
 func findBestPrice(stationList []commodity.StationLine, maxDistance int)  {
-	station := commodity.GetBestPrice(stationList, maxDistance, "S", 0)
+	station := commodity.GetBestPrice(stationList, maxDistance, 1, 0)
 	fmt.Printf("BP in %d ly: %s | %s - %d ly - %d Cr\n", maxDistance, station.System, station.Station, station.Distance, station.Price)
 }
