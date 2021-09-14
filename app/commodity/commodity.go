@@ -26,9 +26,11 @@ type SystemLine struct {
 	Pad int
 	Distance int
 	Quantity int
-	MaxQuantity int
-	Price int
+	MaxQuantity   int
+	LimitedDemand bool
+	Price         int
 	Updated string
+	UpdatedSecAgo int
 }
 
 func SetRequesterMethods(get httpRequester.GetMessage, post httpRequester.PostMessage) {
@@ -41,6 +43,12 @@ func GetBestPrice(sysytemList []SystemLine, maxDistance int, landingPad int, ite
 
 	var bpSystem SystemLine
 	for _, system := range sysytemList {
+		// skip systems with limited items demand updated more than 6 hours ago,
+		// because they often contain not actual data
+		if system.LimitedDemand && system.UpdatedSecAgo > 3600*6 {
+			continue
+		}
+
 		if system.Distance <= maxDistance && system.MaxQuantity >= itemsQuantity && system.Pad >= landingPad  {
 			if system.Price > bpSystem.Price {
 				bpSystem = system
@@ -183,39 +191,82 @@ func getSystemListFromInara(commodityId int, refSystemId int) []SystemLine {
 
 		var system SystemLine
 
-		stationSystem := strings.Split(utility.ParseString(systemParamList[0][1]), "|")
+		stationSystem := strings.Split(utility.ParseString(systemParamList[0][1]), "|") // TODO: move to func, add check | presence
 
 		system.Station = utility.ParseString(stationSystem[0])
 		system.System = utility.ParseString(stationSystem[1])
-		switch strings.ToLower(utility.ParseString(systemParamList[1][1]))  {
-			case "s":
-				system.Pad = 1
-				break
-			case "m":
-				system.Pad = 2
-				break
-			case "l":
-				system.Pad = 3
-				break
-		}
-		if system.Pad == 0 {
-			continue
-		}
+		system.Pad = systemLandingPadToInt(utility.ParseString(systemParamList[1][1]))
 		system.Distance = utility.ParseInteger(systemParamList[3][1])
 		system.Quantity = utility.ParseInteger(systemParamList[4][1])
+		system.MaxQuantity = system.Quantity
 		system.Price = utility.ParseInteger(systemParamList[5][1])
 		system.Updated = utility.ParseString(systemParamList[7][1])
-
-		r := regexp.MustCompile(`more than (\d+)`)
-		res4 := r.FindStringSubmatch(systemParamList[4][1])
-		if res4 != nil {
-			system.MaxQuantity = utility.ParseInteger(res4[1])
-		} else {
-			system.MaxQuantity = system.Quantity
+		system.UpdatedSecAgo = systemUpdatedStrToSec(system.Updated)
+		limitedQuantity, limited := systemGetLimitedDemandCount(systemParamList[4][1])
+		if limited {
+			system.MaxQuantity = limitedQuantity
+			system.LimitedDemand = true
 		}
 
 		SystemList = append(SystemList, system)
 	}
 
 	return SystemList
+}
+
+func systemLandingPadToInt(pad string) int {
+	padInt := 0
+
+	switch strings.ToLower(pad)  {
+		case "s":
+			padInt = 1
+			break
+		case "m":
+			padInt = 2
+			break
+		case "l":
+			padInt = 3
+			break
+	}
+
+	return padInt
+}
+
+func systemUpdatedStrToSec(updated string) int {
+	updatedSec := 0
+
+	r := regexp.MustCompile(`(\d+) (.*) ago`)
+	res := r.FindStringSubmatch(updated)
+	if res != nil {
+		multiplier := 1
+		if strings.Contains(res[2], "minute") {
+			multiplier = 60
+		} else if strings.Contains(res[2], "hour") {
+			multiplier = 60*60
+		} else if strings.Contains(res[2], "day") {
+			multiplier = 60*60*24
+		}
+
+		updatedInt, err := strconv.Atoi(res[1])
+		if err != nil {
+			log.Warnln(err)
+		}
+		updatedSec = updatedInt*multiplier
+	}
+
+	return updatedSec
+}
+
+func systemGetLimitedDemandCount(quantityStr string) (int, bool) {
+	quantity := 0
+	limited := false
+
+	r := regexp.MustCompile(`more than (\d+)`)
+	res := r.FindStringSubmatch(quantityStr)
+	if res != nil {
+		quantity = utility.ParseInteger(res[1])
+		limited = true
+	}
+
+	return quantity, limited
 }
