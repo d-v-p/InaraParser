@@ -36,6 +36,23 @@ func SetRequesterMethods(get httpRequester.GetMessage, post httpRequester.PostMe
 	requester.Post = post
 }
 
+func GetBestPrice(sysytemList []SystemLine, maxDistance int, landingPad int, itemsQuantity int) SystemLine {
+	log.Tracef("getting system with best price in max distance %d, landing pad %d, min items quantity %d", maxDistance, landingPad, itemsQuantity)
+
+	var bpSystem SystemLine
+	for _, system := range sysytemList {
+		if system.Distance <= maxDistance && system.MaxQuantity >= itemsQuantity && system.Pad >= landingPad  {
+			if system.Price > bpSystem.Price {
+				bpSystem = system
+			}
+		}
+	}
+
+	log.Traceln("best price system", bpSystem)
+
+	return bpSystem
+}
+
 func GetSystemList(commodityName string, systemName string) []SystemLine {
 	log.Tracef("getting system list for commodity '%s' and reference system '%s'", commodityName, systemName)
 
@@ -44,15 +61,22 @@ func GetSystemList(commodityName string, systemName string) []SystemLine {
 		log.Warnln("can't get system list, empty commodity id")
 		return nil
 	}
+
 	refSystemId := getReferenceSystemIdByNameFromInara(commodityId, systemName)
 	if refSystemId == 0 {
 		log.Warnln("can't get system list, empty reference system id")
 		return nil
 	}
 
-	res := getSystemListFromInara(commodityId, refSystemId)
+	systemList := getSystemListFromInara(commodityId, refSystemId)
+	if systemList == nil {
+		log.Warnln("can't get system list")
+		return nil
+	}
 
-	return res
+	log.Traceln("getting system list done")
+
+	return systemList
 }
 
 func getCommodityIdByName(commodityName string) int {
@@ -194,21 +218,4 @@ func getSystemListFromInara(commodityId int, refSystemId int) []SystemLine {
 	}
 
 	return SystemList
-}
-
-func GetBestPrice(sysytemList []SystemLine, maxDistance int, landingPad int, itemsQuantity int) SystemLine {
-	log.Tracef("getting system with best price in max distance %d, landing pad %d, min items quantity %d", maxDistance, landingPad, itemsQuantity)
-
-	var bpSystem SystemLine
-	for _, system := range sysytemList {
-		if system.Distance <= maxDistance && system.MaxQuantity >= itemsQuantity && system.Pad >= landingPad  {
-			if system.Price > bpSystem.Price {
-				bpSystem = system
-			}
-		}
-	}
-
-	log.Traceln("best price system", bpSystem)
-
-	return bpSystem
 }
